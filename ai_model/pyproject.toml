@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "demand-sensing"
+version = "0.1.0"
+description = "Retail demand sensing models using LightGBM and ONNX"
+authors = [
+    {name = "AI Engineer"}
+]
+dependencies = [
+    "pandas",
+    "numpy",
+    "scikit-learn",
+    "lightgbm",
+    "optuna",
+    "mlflow",
+    "joblib",
+    "skl2onnx",
+    "onnxmltools",
+    "fastapi",
+    "uvicorn",
+    "onnxruntime",
+    "pytest"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

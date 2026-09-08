@@ -1,0 +1,29 @@
+# Environments
+venv/
+env/
+.env
+.venv/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Machine Learning tracking & Data
+mlruns/
+input/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDEs and OS files
+.vscode/
+.idea/
+.DS_Store
