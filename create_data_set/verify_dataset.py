@@ -14,11 +14,13 @@ df = pd.read_csv(filename, nrows=500000)
 
 print("\n--- Column Existence Check ---")
 expected_columns = [
-    'timestamp', 'store_id', 'store_type', 'area_type', 'product_id', 'product_name',
+    'timestamp', 'store_id', 'area_type', 'product_id', 'product_name',
     'category', 'price', 'inventory', 'qty_sold', 'true_demand', 'hour_of_day', 'day_of_week',
-    'weekend_flag', 'holiday_flag', 'holiday_type', 'payday_flag', 'promo_flag',
+    'weekend_flag', 'holiday_type', 'payday_flag', 'promo_flag',
     'forecasted_temperature', 'forecasted_rainfall', 'forecasted_heat_index',
     'foot_traffic', 'nearby_event_flag', 'stockout_flag',
+    'pagasa_heatwave_flag', 'typhoon_panic_flag',
+    'grid_maintenance_flag', 'back_to_school_flag',
     'qty_sold_lag_1h', 'qty_sold_lag_24h', 'qty_sold_lag_168h',
     'foot_traffic_lag_1h', 'foot_traffic_lag_2h',
     'store_historical_avg_sales', 'product_historical_avg_sales'
@@ -29,6 +31,13 @@ if missing_cols:
     print(f"FAIL: Missing columns: {missing_cols}")
 else:
     print("PASS: All expected columns are present.")
+
+removed_columns = ['store_type', 'holiday_flag', 'barangay_fiesta_flag', 'lenten_meatless_flag']
+present_removed = [c for c in removed_columns if c in df.columns]
+if present_removed:
+    print(f"FAIL: These columns were removed as redundant duplicates but are still present: {present_removed}")
+else:
+    print("PASS: Redundant duplicate columns (store_type, holiday_flag, barangay_fiesta_flag, lenten_meatless_flag) are absent, as expected.")
 
 print("\n--- target variable check (true_demand vs qty_sold) ---")
 # 1. Check true_demand == qty_sold when stockout_flag == 0 and inventory > 0
@@ -94,6 +103,17 @@ for col in weather_cols:
         print(f"INFO: {col} has mean={mean_val:.2f}, nulls={null_count} ({null_count/len(df)*100:.2f}%)")
     else:
         print(f"FAIL: weather column {col} missing.")
+
+print("\n--- Named scenario flag check ---")
+scenario_flags = ['pagasa_heatwave_flag', 'typhoon_panic_flag', 'grid_maintenance_flag', 'back_to_school_flag']
+for flag in scenario_flags:
+    if flag in df.columns:
+        vc = df[flag].value_counts().to_dict()
+        print(f"INFO: {flag} distribution: {vc}")
+        if set(df[flag].unique()) - {0, 1}:
+            print(f"FAIL: {flag} contains values outside {{0,1}}.")
+    else:
+        print(f"FAIL: expected scenario flag column {flag} missing.")
 
 print("\n--- High-cardinality target encoding check ---")
 # Verify store and product baseline features are present and non-empty

@@ -221,19 +221,23 @@ print("Starting 4.9M row generation. Processing store by store...")
 # 4. STORE-BY-STORE GENERATION LOOP
 # =========================================================
 store_columns = [
-    'timestamp', 'store_id', 'store_type', 'area_type', 'product_id', 'product_name', 
+    'timestamp', 'store_id', 'area_type', 'product_id', 'product_name', 
     'category', 'price', 'inventory', 'qty_sold', 'hour_of_day', 'day_of_week', 
-    'weekend_flag', 'holiday_flag', 'holiday_type', 'payday_flag', 'promo_flag', 
+    'weekend_flag', 'holiday_type', 'payday_flag', 'promo_flag', 
     'forecasted_temperature', 'forecasted_rainfall', 'forecasted_heat_index', 
-    'foot_traffic', 'nearby_event_flag', 'stockout_flag'
+    'foot_traffic', 'nearby_event_flag', 'stockout_flag',
+    'pagasa_heatwave_flag', 'typhoon_panic_flag',
+    'grid_maintenance_flag', 'back_to_school_flag'
 ]
 
 final_columns = [
-    'timestamp', 'store_id', 'store_type', 'area_type', 'product_id', 'product_name', 
+    'timestamp', 'store_id', 'area_type', 'product_id', 'product_name', 
     'category', 'price', 'inventory', 'qty_sold', 'true_demand', 'hour_of_day', 'day_of_week', 
-    'weekend_flag', 'holiday_flag', 'holiday_type', 'payday_flag', 'promo_flag', 
+    'weekend_flag', 'holiday_type', 'payday_flag', 'promo_flag', 
     'forecasted_temperature', 'forecasted_rainfall', 'forecasted_heat_index', 
     'foot_traffic', 'nearby_event_flag', 'stockout_flag',
+    'pagasa_heatwave_flag', 'typhoon_panic_flag',
+    'grid_maintenance_flag', 'back_to_school_flag',
     'qty_sold_lag_1h', 'qty_sold_lag_24h', 'qty_sold_lag_168h',
     'foot_traffic_lag_1h', 'foot_traffic_lag_2h'
 ]
@@ -273,13 +277,10 @@ for store_id, profile in store_profiles.items():
             h_type = ph_holidays.get(current_md)
 
         if h_type:
-            holiday_flag = 1
             holiday_type = h_type
         elif date_obj in holy_week:
-            holiday_flag = 1
             holiday_type = "Holy Week"
         else:
-            holiday_flag = 0
             holiday_type = "None"
         nearby_event_flag = 1 if np.random.rand() < 0.03 else 0 
         
@@ -300,7 +301,27 @@ for store_id, profile in store_profiles.items():
 
         # 1 = Typhoon arrives tomorrow, 0 = Normal
         typhoon_incoming = 1 if (date_obj + timedelta(days=1)) in typhoon_days else 0
-        
+
+        # -----------------------------------------------------------------
+        # NAMED SCENARIO FLAGS (mirrors the live-stream "Simulate" scenarios)
+        # -----------------------------------------------------------------
+        # PAGASA Heatwave: hot, dry conditions (matches the Extreme Heat demand profile trigger)
+        pagasa_heatwave_flag = 1 if (rainfall == 0 and temperature >= 35) else 0
+
+        # Typhoon Panic: active typhoon day or one arriving within 24h
+        typhoon_panic_flag = 1 if (date_obj in typhoon_days or typhoon_incoming) else 0
+
+        # Grid Maintenance: scheduled NGCP brownout/grid warning day
+        grid_maintenance_flag = 1 if date_obj in grid_warning_days else 0
+
+        # Back-to-School: school enrollment/supplies season
+        back_to_school_flag = 1 if school_season else 0
+
+        # NOTE: "Barangay Fiesta" and "Lenten Meatless" scenarios are intentionally
+        # NOT given their own flag columns here — they are exact duplicates of
+        # existing columns (nearby_event_flag, and holiday_type == "Holy Week"
+        # respectively). Use those columns directly instead of re-deriving them.
+
         # -----------------------------------------------------------------
         # FOOT TRAFFIC: HYPERLOCAL STORE PROFILES
         # -----------------------------------------------------------------
@@ -496,11 +517,13 @@ for store_id, profile in store_profiles.items():
             inventory[p_id] -= qty_sold
 
             data_rows.append((
-                dt.strftime('%Y-%m-%d %H:%M:%S'), store_id, profile['type'], profile['name'],
+                dt.strftime('%Y-%m-%d %H:%M:%S'), store_id, profile['name'],
                 p_id, p_name, cat, price, inventory[p_id], qty_sold,
-                hour, day_of_week, weekend_flag, holiday_flag, holiday_type, 
+                hour, day_of_week, weekend_flag, holiday_type, 
                 payday_flag, promo_flag, forecasted_temperature, forecasted_rainfall, forecasted_heat_index,
-                foot_traffic, nearby_event_flag, stockout_flag
+                foot_traffic, nearby_event_flag, stockout_flag,
+                pagasa_heatwave_flag, typhoon_panic_flag,
+                grid_maintenance_flag, back_to_school_flag
             ))
             
     # Process store data to add lags and true_demand before appending

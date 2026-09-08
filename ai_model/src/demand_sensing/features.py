@@ -5,13 +5,13 @@ from sklearn.preprocessing import OrdinalEncoder
 UNKNOWN_CATEGORY_FLAG = 999999
 
 CATEGORICAL_COLS = [
-    "store_id", "store_type", "area_type", "product_id", "category", "holiday_type"
+    "store_id", "product_id", "category", "holiday_type"
 ]
 
 FEATURE_COLUMNS = [
-    "store_id", "store_type", "area_type", "product_id", "category",
+    "store_id", "product_id", "category",
     "price", "inventory", 
-    "promo_flag", "payday_flag", "weekend_flag", "holiday_flag", "holiday_type", "nearby_event_flag", "stockout_flag", "brownout_flag",
+    "promo_flag", "payday_flag", "weekend_flag", "holiday_type", "nearby_event_flag", "stockout_flag", "brownout_flag",
     "forecasted_temperature", "forecasted_rainfall", "forecasted_heat_index", 
     "hour_of_day", "day_of_week", "month",
     "qty_sold_lag_24h",
