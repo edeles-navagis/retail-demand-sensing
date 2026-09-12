@@ -5,25 +5,31 @@ from sklearn.preprocessing import OrdinalEncoder
 UNKNOWN_CATEGORY_FLAG = 999999
 
 CATEGORICAL_COLS = [
-    "store_id", "product_id", "category", "holiday_type"
+    "store_id", "area_type", "product_id", "category", "holiday_type"
 ]
 
 FEATURE_COLUMNS = [
-    "store_id", "product_id", "category",
+    "store_id", "area_type", "product_id", "category",
     "price", "inventory", 
     "promo_flag", "payday_flag", "weekend_flag", "holiday_type", "nearby_event_flag", "stockout_flag", "brownout_flag",
     "forecasted_temperature", "forecasted_rainfall", "forecasted_heat_index", 
     "hour_of_day", "day_of_week", "month",
-    "qty_sold_lag_24h",
-    "foot_traffic_lag_2h",
+    "sin_hour", "cos_hour", "sin_dow", "cos_dow",
+    "is_rush_hour", "is_heatwave_risk", "is_heavy_rain", "is_fiesta_payday", "is_school_season",
+    "qty_sold_lag_1h", "qty_sold_lag_24h",
+    "foot_traffic_lag_1h", "foot_traffic_lag_2h",
     "store_historical_avg_sales", "product_historical_avg_sales",
     "rolling_mean_demand_3h", "rolling_mean_demand_6h", "rolling_mean_demand_24h", "rolling_std_6h"
 ]
 
 def load_data(filepath: str) -> pd.DataFrame:
     print("Loading data...")
-    df = pd.read_csv(filepath, dtype={'holiday_type': str})
+    df = pd.read_csv(filepath, dtype={'holiday_type': str, 'area_type': str})
     df["holiday_type"] = df["holiday_type"].fillna("No Holiday")
+    if "area_type" in df.columns:
+        df["area_type"] = df["area_type"].fillna("Convenience")
+    else:
+        df["area_type"] = "Escario Central"
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     return df
 
@@ -55,7 +61,10 @@ def inject_stochastic_scenarios(df: pd.DataFrame) -> pd.DataFrame:
     df.loc[rain_mask, 'true_demand'] += (40 + get_noise(df[rain_mask].shape[0]))
 
     if 'brownout_flag' not in df.columns:
-        df['brownout_flag'] = np.random.choice([0, 1], size=len(df), p=[0.95, 0.05])
+        if 'grid_maintenance_flag' in df.columns:
+            df['brownout_flag'] = df['grid_maintenance_flag']
+        else:
+            df['brownout_flag'] = np.random.choice([0, 1], size=len(df), p=[0.95, 0.05])
     mask_brownout = (df['brownout_flag'] == 1) & (df['forecasted_heat_index'] >= 35)
     brownout_products = ["SKU-ELE-D--039", "SKU-ELE-PO-040"]
     brownout_mask = mask_brownout & df['product_id'].isin(brownout_products)
@@ -92,6 +101,49 @@ def inject_stochastic_scenarios(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
+def compute_derived_features(df: pd.DataFrame) -> pd.DataFrame:
+    if "area_type" not in df.columns:
+        df["area_type"] = "Escario Central"
+    df["area_type"] = df["area_type"].fillna("Escario Central")
+
+    if "hour_of_day" in df.columns:
+        if "sin_hour" not in df.columns:
+            df["sin_hour"] = np.sin(2 * np.pi * df["hour_of_day"] / 24.0)
+            df["cos_hour"] = np.cos(2 * np.pi * df["hour_of_day"] / 24.0)
+        if "is_rush_hour" not in df.columns:
+            df["is_rush_hour"] = df["hour_of_day"].isin([7, 8, 9, 17, 18, 19]).astype(int)
+
+    if "day_of_week" in df.columns:
+        if "sin_dow" not in df.columns:
+            df["sin_dow"] = np.sin(2 * np.pi * df["day_of_week"] / 7.0)
+            df["cos_dow"] = np.cos(2 * np.pi * df["day_of_week"] / 7.0)
+
+    if "forecasted_heat_index" in df.columns and "is_heatwave_risk" not in df.columns:
+        df["is_heatwave_risk"] = (df["forecasted_heat_index"] >= 40).astype(int)
+
+    if "forecasted_rainfall" in df.columns and "is_heavy_rain" not in df.columns:
+        df["is_heavy_rain"] = (df["forecasted_rainfall"] >= 10).astype(int)
+
+    if "is_fiesta_payday" not in df.columns:
+        nearby = df.get("nearby_event_flag", pd.Series(0, index=df.index))
+        payday = df.get("payday_flag", pd.Series(0, index=df.index))
+        df["is_fiesta_payday"] = ((nearby == 1) & (payday == 1)).astype(int)
+
+    if "month" in df.columns and "is_school_season" not in df.columns:
+        df["is_school_season"] = df["month"].isin([8, 9]).astype(int)
+
+    if "foot_traffic_lag_1h" not in df.columns:
+        df["foot_traffic_lag_1h"] = df.get("foot_traffic_lag_2h", df.get("foot_traffic", pd.Series(50.0, index=df.index)))
+
+    if "qty_sold_lag_1h" not in df.columns:
+        df["qty_sold_lag_1h"] = df.get("qty_sold_lag_24h", df.get("qty_sold", pd.Series(0.0, index=df.index)))
+
+    if "holiday_type" not in df.columns:
+        df["holiday_type"] = "No Holiday"
+    df["holiday_type"] = df["holiday_type"].fillna("No Holiday")
+
+    return df
+
 def generate_causal_features(df: pd.DataFrame) -> pd.DataFrame:
     print("Creating target and generating features...")
     df["target_demand_1h"] = df.groupby(["store_id", "product_id"], observed=False)["true_demand"].shift(-1)
@@ -106,12 +158,24 @@ def generate_causal_features(df: pd.DataFrame) -> pd.DataFrame:
     df["rolling_mean_demand_24h"] = grouped["qty_sold"].transform(lambda x: x.shift(2).rolling(window=24).mean())
     df["rolling_std_6h"] = grouped["qty_sold"].transform(lambda x: x.shift(2).rolling(window=6).std())
 
-    # Expanding historical averages resolved chronologically per item block context
-    df["store_historical_avg_sales"] = df.groupby(["store_id", "product_id"])["qty_sold"].transform(lambda x: x.shift(2).expanding().mean())
-    df["product_historical_avg_sales"] = df.groupby(["store_id", "product_id"])["qty_sold"].transform(lambda x: x.shift(2).expanding().mean())
+    # Expanding historical averages resolved chronologically:
+    # 1. store-level baseline sales velocity
+    df["store_historical_avg_sales"] = df.groupby("store_id")["qty_sold"].transform(lambda x: x.shift(2).expanding().mean()).fillna(0)
+    # 2. product-level cross-store baseline velocity
+    df["product_historical_avg_sales"] = df.groupby("product_id")["qty_sold"].transform(lambda x: x.shift(2).expanding().mean()).fillna(0)
 
-    df["store_historical_avg_sales"] = df["store_historical_avg_sales"].fillna(0)
-    df["product_historical_avg_sales"] = df["product_historical_avg_sales"].fillna(0)
+    # Compute derived scenario and cyclical features
+    df = compute_derived_features(df)
+
+    if "qty_sold_lag_1h" not in df.columns:
+        df["qty_sold_lag_1h"] = grouped["qty_sold"].shift(1).fillna(0)
+    else:
+        df["qty_sold_lag_1h"] = df["qty_sold_lag_1h"].fillna(0)
+
+    if "foot_traffic_lag_1h" not in df.columns:
+        df["foot_traffic_lag_1h"] = grouped["foot_traffic"].shift(1).fillna(50.0)
+    else:
+        df["foot_traffic_lag_1h"] = df["foot_traffic_lag_1h"].fillna(50.0)
 
     # Drop rows where target or rolling features are NaN due to shifting
     df = df.dropna(subset=["target_demand_1h", "target_demand_2h", "target_demand_3h", "rolling_mean_demand_24h"])

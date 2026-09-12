@@ -8,7 +8,7 @@ import os
 # Ensure the root is in PYTHONPATH so we can import src
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.demand_sensing.features import FEATURE_COLUMNS, CATEGORICAL_COLS
+from src.demand_sensing.features import FEATURE_COLUMNS, CATEGORICAL_COLS, compute_derived_features
 
 # =========================================================
 # 1. LOAD EXPORTED FILES
@@ -94,6 +94,7 @@ def run_prediction(scenario_name, product_ids, modifications):
         data = create_base_input(pid)
         data.update(modifications)
         df = pd.DataFrame([data])
+        df = compute_derived_features(df)
         
         df[CATEGORICAL_COLS] = encoder_multi.transform(df[CATEGORICAL_COLS].astype(str))
         for col in CATEGORICAL_COLS:

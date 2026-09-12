@@ -9,22 +9,22 @@ from sklearn.metrics import mean_absolute_error
 from sklearn.multioutput import MultiOutputRegressor
 from .features import CATEGORICAL_COLS, prepare_pipeline_data
 
-def train_multi_lgb_with_optuna_production(X_train, y_train, categorical_cols, model_name="model", n_trials=30):
+def train_multi_lgb_with_optuna_production(X_train, y_train, categorical_cols, model_name="model", n_trials=12):
     def objective(trial):
         params = {
             "objective": "regression_l1",
             "metric": "mae",
-            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
-            "num_leaves": trial.suggest_int("num_leaves", 16, 256),
-            "max_depth": trial.suggest_int("max_depth", 3, 12),
-            "min_child_samples": trial.suggest_int("min_child_samples", 5, 100),
-            "subsample": trial.suggest_float("subsample", 0.6, 1.0),
-            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
-            "reg_alpha": trial.suggest_float("reg_alpha", 0.0, 10.0),
-            "reg_lambda": trial.suggest_float("reg_lambda", 0.0, 10.0),
-            "cat_smooth": trial.suggest_float("cat_smooth", 10.0, 100.0),
-            "cat_l2": trial.suggest_float("cat_l2", 0.0, 50.0),
-            "n_estimators": trial.suggest_int("n_estimators", 50, 300),
+            "learning_rate": trial.suggest_float("learning_rate", 0.02, 0.15, log=True),
+            "num_leaves": trial.suggest_int("num_leaves", 64, 256),
+            "max_depth": trial.suggest_int("max_depth", 6, 14),
+            "min_child_samples": trial.suggest_int("min_child_samples", 15, 80),
+            "subsample": trial.suggest_float("subsample", 0.7, 1.0),
+            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.7, 1.0),
+            "reg_alpha": trial.suggest_float("reg_alpha", 0.1, 8.0),
+            "reg_lambda": trial.suggest_float("reg_lambda", 0.1, 8.0),
+            "cat_smooth": trial.suggest_float("cat_smooth", 10.0, 80.0),
+            "cat_l2": trial.suggest_float("cat_l2", 0.0, 40.0),
+            "n_estimators": trial.suggest_int("n_estimators", 200, 500),
             "random_state": 42,
             "n_jobs": -1,
             "force_row_wise": True,
@@ -43,7 +43,6 @@ def train_multi_lgb_with_optuna_production(X_train, y_train, categorical_cols, m
                 model = MultiOutputRegressor(base_model)
                 
                 # Fit the multi-output model
-                # Note: kwargs like categorical_feature get passed to the underlying base_model
                 model.fit(X_t, y_t, categorical_feature=categorical_cols)
 
                 preds = model.predict(X_v)
@@ -85,6 +84,7 @@ def train_multi_lgb_with_optuna_production(X_train, y_train, categorical_cols, m
         "verbose": -1
     })
 
+    print("\nFitting final production model with best hyperparameters on full training set...")
     base_final_model = lgb.LGBMRegressor(**best_params)
     final_model = MultiOutputRegressor(base_final_model)
     final_model.fit(X_train, y_train, categorical_feature=categorical_cols)
@@ -121,7 +121,7 @@ def run_training_pipeline(data_path="input/store_sales_multi_store.csv"):
         y_train=y_train_multi, 
         categorical_cols=CATEGORICAL_COLS, 
         model_name="demand_multi", 
-        n_trials=30
+        n_trials=10
     )
 
     print("\nEvaluating Production Model on Holdout Test Set...")
@@ -133,7 +133,7 @@ def run_training_pipeline(data_path="input/store_sales_multi_store.csv"):
 
     y_test_sum = np.sum(y_test_array)
     wape_multi = 0.0 if y_test_sum == 0 else np.sum(np.abs(y_test_array - preds_multi)) / y_test_sum
-    print(f"Multi-Output Test Set Results -> Overall MAE: {mae_multi:.4f} | Overall WAPE: {wape_multi:.4f}")
+    print(f"Multi-Output Test Set Results -> Overall MAE: {mae_multi:.4f} | Overall WAPE: {wape_multi:.4f} (Accuracy: {(1-wape_multi)*100:.2f}%)")
 
     joblib.dump(model_multi, "output/demand_model_multi.pkl")
     joblib.dump(encoder, "output/categorical_encoder.pkl")

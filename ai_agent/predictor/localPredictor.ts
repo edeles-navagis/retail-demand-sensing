@@ -23,7 +23,7 @@ export async function predictLocally(instances: ModelInstance[]): Promise<number
   const session = await getSession();
   const batchSize = instances.length;
 
-  const categorical_cols = ["store_id", "product_id", "category", "holiday_type"];
+  const categorical_cols = ["store_id", "area_type", "product_id", "category", "holiday_type"];
   
   const feeds: Record<string, ort.Tensor> = {};
   const inputNames = session.inputNames;
@@ -36,7 +36,91 @@ export async function predictLocally(instances: ModelInstance[]): Promise<number
     if (featureName === 'forecasted_temperature') aliasKey = 'temperature';
     if (featureName === 'forecasted_rainfall') aliasKey = 'rainfall';
     if (featureName === 'forecasted_heat_index') aliasKey = 'heat_index';
-    if (featureName === 'foot_traffic_lag_2h') aliasKey = 'foot_traffic';
+    if (featureName === 'foot_traffic_lag_2h' || featureName === 'foot_traffic_lag_1h') aliasKey = 'foot_traffic';
+    if (featureName === 'qty_sold_lag_1h') aliasKey = 'qty_sold';
+
+    if (featureName === 'sin_hour') {
+      const data = new Float32Array(batchSize);
+      for (let i = 0; i < batchSize; i++) {
+        const h = Number((instances[i] as any).hour_of_day ?? 12);
+        data[i] = Math.sin((2 * Math.PI * h) / 24.0);
+      }
+      feeds[featureName] = new ort.Tensor('float32', data, [batchSize, 1]);
+      continue;
+    }
+    if (featureName === 'cos_hour') {
+      const data = new Float32Array(batchSize);
+      for (let i = 0; i < batchSize; i++) {
+        const h = Number((instances[i] as any).hour_of_day ?? 12);
+        data[i] = Math.cos((2 * Math.PI * h) / 24.0);
+      }
+      feeds[featureName] = new ort.Tensor('float32', data, [batchSize, 1]);
+      continue;
+    }
+    if (featureName === 'sin_dow') {
+      const data = new Float32Array(batchSize);
+      for (let i = 0; i < batchSize; i++) {
+        const d = Number((instances[i] as any).day_of_week ?? 3);
+        data[i] = Math.sin((2 * Math.PI * d) / 7.0);
+      }
+      feeds[featureName] = new ort.Tensor('float32', data, [batchSize, 1]);
+      continue;
+    }
+    if (featureName === 'cos_dow') {
+      const data = new Float32Array(batchSize);
+      for (let i = 0; i < batchSize; i++) {
+        const d = Number((instances[i] as any).day_of_week ?? 3);
+        data[i] = Math.cos((2 * Math.PI * d) / 7.0);
+      }
+      feeds[featureName] = new ort.Tensor('float32', data, [batchSize, 1]);
+      continue;
+    }
+    if (featureName === 'is_rush_hour') {
+      const data = new Float32Array(batchSize);
+      for (let i = 0; i < batchSize; i++) {
+        const h = Number((instances[i] as any).hour_of_day ?? 12);
+        data[i] = [7, 8, 9, 17, 18, 19].includes(h) ? 1 : 0;
+      }
+      feeds[featureName] = new ort.Tensor('float32', data, [batchSize, 1]);
+      continue;
+    }
+    if (featureName === 'is_heatwave_risk') {
+      const data = new Float32Array(batchSize);
+      for (let i = 0; i < batchSize; i++) {
+        const hi = Number((instances[i] as any).forecasted_heat_index ?? (instances[i] as any).heat_index ?? 30);
+        data[i] = hi >= 40 ? 1 : 0;
+      }
+      feeds[featureName] = new ort.Tensor('float32', data, [batchSize, 1]);
+      continue;
+    }
+    if (featureName === 'is_heavy_rain') {
+      const data = new Float32Array(batchSize);
+      for (let i = 0; i < batchSize; i++) {
+        const rf = Number((instances[i] as any).forecasted_rainfall ?? (instances[i] as any).rainfall ?? 0);
+        data[i] = rf >= 10 ? 1 : 0;
+      }
+      feeds[featureName] = new ort.Tensor('float32', data, [batchSize, 1]);
+      continue;
+    }
+    if (featureName === 'is_fiesta_payday') {
+      const data = new Float32Array(batchSize);
+      for (let i = 0; i < batchSize; i++) {
+        const evt = Number((instances[i] as any).nearby_event_flag ?? 0);
+        const pay = Number((instances[i] as any).payday_flag ?? 0);
+        data[i] = evt === 1 && pay === 1 ? 1 : 0;
+      }
+      feeds[featureName] = new ort.Tensor('float32', data, [batchSize, 1]);
+      continue;
+    }
+    if (featureName === 'is_school_season') {
+      const data = new Float32Array(batchSize);
+      for (let i = 0; i < batchSize; i++) {
+        const m = Number((instances[i] as any).month ?? 4);
+        data[i] = m === 8 || m === 9 ? 1 : 0;
+      }
+      feeds[featureName] = new ort.Tensor('float32', data, [batchSize, 1]);
+      continue;
+    }
 
     if (isCat) {
       const data = new Array<string>(batchSize);
